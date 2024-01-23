@@ -17,7 +17,6 @@ using System.Text;
 using System.Timers;
 using System.Collections.Generic;
 using Oxide.Game.Rust.Cui;
-using UnityEngine;
 using MySql.Data.MySqlClient;
 using Oxide.Ext.Discord.Helpers.Cdn;
 using System.Reflection;
@@ -29,6 +28,12 @@ using Unity.IO.LowLevel.Unsafe;
 using System.Runtime;
 using Oxide.Core;
 using UnityEngine;
+using UnityEngine.UI;
+using Newtonsoft.Json.Linq;
+using static System.Net.Mime.MediaTypeNames;
+using System.Numerics;
+using System.Reflection.Metadata.Ecma335;
+
 
 
 namespace Oxide.Plugins
@@ -40,8 +45,31 @@ namespace Oxide.Plugins
         private const string USER_REGISTRED_USER_PERMISSION = "NebulosaCore.Registred";
         private const string USER_NOT_REGISTRED_PERMISSION = "NebulosaCore.NotRegistred";
 
-        List<ulong> MenuOpen = new List<ulong>();
+        class MenuClass
+        {
+            public int page = 0;
+            public int menu = 0;
+            public ulong player;
+        };
+        List<MenuClass> MenuOpen = new List<MenuClass>();
 
+
+
+        class Shop
+        {
+            public string name;
+            public int value;
+        };
+
+        List<Shop> ShopItens = new System.Collections.Generic.List<Shop>();
+
+
+        private class CuiInputField
+        {
+            public CuiInputFieldComponent InputField { get; } = new CuiInputFieldComponent();
+            public CuiRectTransformComponent RectTransform { get; } = new CuiRectTransformComponent();
+            public float FadeOut { get; set; }
+        }
 
         #region Class Field
         //config
@@ -133,11 +161,41 @@ namespace Oxide.Plugins
             };
 
             conn = new MySqlConnection(builder.ConnectionString);
+
+
+            Shop item = new Shop();
+            item.value = 10;
+            item.name = "wood";
+            ShopItens.Add(item);
+
+            item.value = 10;
+            item.name = "stone";
+            ShopItens.Add(item);
+
+            item.value = 10;
+            item.name = "stone";
+            ShopItens.Add(item);
+            ShopItens.Add(item);
+            ShopItens.Add(item);
+            ShopItens.Add(item);
+            ShopItens.Add(item);
+            ShopItens.Add(item);
+            ShopItens.Add(item);
+            ShopItens.Add(item);
+            ShopItens.Add(item);
+            ShopItens.Add(item);
+            ShopItens.Add(item);
+            ShopItens.Add(item);
+            ShopItens.Add(item);
+            ShopItens.Add(item);
+            ShopItens.Add(item);
+            ShopItens.Add(item);
+            ShopItens.Add(item);
         }
 
         void Unload()
         {
-            foreach (BasePlayer player in BasePlayer.activePlayerList.Where(player => MenuOpen.Contains(player.userID)))
+            foreach (BasePlayer player in BasePlayer.activePlayerList.Where(player => MenuOpen.Any(menu => menu.player == player.userID)))
                 DestroyMenu(player);
         }
 
@@ -184,6 +242,85 @@ namespace Oxide.Plugins
         }
 
         #region MenuConfiguration
+
+        string GetGroup(BasePlayer player)
+        {
+            if (player.IsAdmin)
+            {
+                return "Admin";
+            }
+
+            //check vip code here
+
+            if (permission.UserHasGroup(player.UserIDString, "Registred"))
+            {
+                return "Registred";
+            }
+
+            if (permission.UserHasGroup(player.UserIDString, "NotRegistred"))
+            {
+                return "NotRegistred";
+            }
+
+            return "NotRegistred";
+        }
+
+        string GetMoney(BasePlayer player)
+        {
+            using(var readCommand = conn.CreateCommand())
+            {
+                readCommand.CommandText = $"SELECT `Money` FROM `Users` WHERE `SteamID` = '{player.UserIDString}' ";
+                using (var reader = readCommand.ExecuteReader())
+                {
+                    reader.Read();
+                    return reader.GetString(0);
+                }
+            }
+        }
+
+        bool DiscordLinked(string steamID)
+        {
+            if (conn.State == System.Data.ConnectionState.Closed)
+            {
+                conn.Open();
+            }
+
+            using (var readCommand = conn.CreateCommand())
+            {
+                readCommand.CommandText = $"SELECT `Discord` FROM `Users` WHERE `SteamID` = '{steamID}' ";
+                using (var reader = readCommand.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        if ((string)reader["Discord"] != "")
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        [ConsoleCommand("LinkDiscord")]
+        void LinkDiscord(ConsoleSystem.Arg arg)
+        {
+            if (conn.State == System.Data.ConnectionState.Closed)
+            {
+                conn.Open();
+            }
+
+            BasePlayer player = arg.Player();
+
+            using (var UpdateCommand = conn.CreateCommand())
+            {
+                UpdateCommand.CommandText = $"UPDATE `Users` SET `Discord` = '{arg.Args[0]}' WHERE `SteamID` = '{player.UserIDString}'";
+                UpdateCommand.ExecuteNonQuery();
+            }
+            Puts($"the argument in LinkDiscord: {arg.Args[0]}");
+        }
+
         void CriarMenu(BasePlayer player)
         {
             var container = new CuiElementContainer();
@@ -193,35 +330,276 @@ namespace Oxide.Plugins
             {
                 Image = { Color = "0 0 0 0.5" },
                 RectTransform = { AnchorMin = "0.1 0.1", AnchorMax = "0.9 0.9" },
-                CursorEnabled = true
-            }, "Overlay", "MeuMenu");
+                CursorEnabled = true,
+                KeyboardEnabled = true
+            }, "Overlay", "NebulosaMenu");
 
             // Botão de fechar
             container.Add(new CuiButton
             {
                 Button = { Command = "fecharmenu", Color = "1 0 0 1" },
-                RectTransform = { AnchorMin = "0.97 0.95", AnchorMax = "1 1" },
-                Text = { Text = "X", FontSize = 18, Align = TextAnchor.MiddleCenter }
+                RectTransform = { AnchorMin = "0.95 0.95", AnchorMax = "1 1" },
+                Text = { Text = "X", FontSize = 16, Align = TextAnchor.MiddleCenter }
             }, mainPanel);
 
+            //left Panel
             {
+                var leftPanel = container.Add(new CuiPanel
+                {
+                    Image = { Color = "0 0 0 0.8" },
+                    RectTransform = { AnchorMin = "0 0", AnchorMax = "0.3 1" },
+                    CursorEnabled = true,
+                    KeyboardEnabled = true
+                }, mainPanel);
 
+                //picture
+                {
+                    var picture = container.Add(new CuiPanel
+                    {
+                        Image = { Color = "1 1 1 1" },
+                        RectTransform =
+                        {
+                            AnchorMin = "0 0.75", AnchorMax = "1 1"
+                        }
+                    }, leftPanel);
+
+                    container.Add(new CuiLabel
+                    {
+                        Text = { Text = "Image Here",
+                            Align = TextAnchor.MiddleCenter,
+                            Color = "0 0 0 1", FontSize = 20},
+                        RectTransform =
+                        {
+                            AnchorMin = "0.25 0.25",
+                            AnchorMax = "0.3 0.3"
+                        }
+                    }, picture);
+                }
+
+                container.Add(new CuiLabel
+                {
+                    Text = { Text = $"Group: {GetGroup(player)}", FontSize = 20, Align = TextAnchor.MiddleLeft },
+                    RectTransform = { AnchorMin = "0 0.47"/*, AnchorMax = "0 0.55"*/ }
+                }, leftPanel);
+
+                container.Add(new CuiLabel
+                {
+                    Text = {Text = "$Money: {"}
+                })
+
+                if (!DiscordLinked(player.UserIDString))
+                {
+                    CuiInputField inputField = new CuiInputField
+                    {
+                        InputField =
+                        {
+                            Text = "Discord ID Here",
+                            FontSize = 18,
+                            Align = TextAnchor.MiddleCenter,
+                            Color = "1 1 1 1",
+                            CharsLimit = 50,
+                            Command = "",
+                            IsPassword = false
+                        },
+                        RectTransform =
+                        {
+                            AnchorMin = "0 0.60",
+                            AnchorMax = "1 0.65"
+                        }
+                    };
+
+                    container.Add(new CuiElement
+                    {
+                        Name = "Discord ID Here",
+                        Parent = leftPanel,
+                        Components =
+                        {
+                            inputField.InputField,
+                            inputField.RectTransform
+                        }
+                    });
+
+                    container.Add(new CuiButton
+                    {
+                        Button = { Command = $"LinkDiscord {inputField.InputField.Text}", Color = "0 0 1 1" },
+                        RectTransform = { AnchorMin = "0 0.53", AnchorMax = "1 0.59" },
+                        Text = { Text = "Link Discord", FontSize = 18, Align = TextAnchor.MiddleCenter }
+                    }, leftPanel);
+                }
+
+                //discord
+                container.Add(new CuiButton
+                {
+                    Button = { Command = "discord", Color = "0 0 1 1" },
+                    RectTransform = { AnchorMin = "0 0", AnchorMax = "1 0.04" },
+                    Text = { Text = "Discord", FontSize = 18, Align = TextAnchor.MiddleCenter }
+                }, leftPanel);
+
+                //website
+                container.Add(new CuiButton
+                {
+                    Button = { Command = "website", Color = "1 0 0 1" },
+                    RectTransform = { AnchorMin = "0 0.04", AnchorMax = "1 0.08" },
+                    Text = { Text = "WebSite", FontSize = 18, Align = TextAnchor.MiddleCenter }
+                }, leftPanel);
+
+                
 
 
             }
 
+            //mid Panel
+            {
+                var MidPanel = container.Add(new CuiPanel
+                {
+                    Image = { Color = "0 0 0 0.9" },
+                    RectTransform = { AnchorMin = "0.301 0", AnchorMax = "1 0.94" },
+                    CursorEnabled = true,
+                    KeyboardEnabled = true
+                }, mainPanel);
 
+                //topMidPanelButtons
+                {
+                    var TopMidPanelButtons = container.Add(new CuiPanel
+                    {
+                        Image = { Color = "0 0 0 0.9" },
+                        RectTransform = { AnchorMin = "0 0.9", AnchorMax = "1 1" },
+                        CursorEnabled = true,
+                        KeyboardEnabled = true
+                    }, MidPanel);
+
+                    container.Add(new CuiButton
+                    {
+                        Button = { Command = "", Color = "0 0 0 1" },
+                        Text = { Text = "Shop", FontSize = 18, Align = TextAnchor.MiddleCenter },
+                        RectTransform = { AnchorMin = "0 0", AnchorMax = "0.2 1" }
+                    }, TopMidPanelButtons);
+
+                    container.Add(new CuiButton
+                    {
+                        Button = { Command = "", Color = "0 0 0 1" },
+                        Text = { Text = "Vehicle", FontSize = 18, Align = TextAnchor.MiddleCenter },
+                        RectTransform = { AnchorMin = "0.3 0", AnchorMax = "0.5 1" }
+                    }, TopMidPanelButtons);
+
+                    container.Add(new CuiButton
+                    {
+                        Button = { Command = "", Color = "0 0 0 1" },
+                        Text = { Text = "Events", FontSize = 18, Align = TextAnchor.MiddleCenter },
+                        RectTransform = { AnchorMin = "0.6 0", AnchorMax = "0.8 1" }
+                    }, TopMidPanelButtons);
+                }
+                //itens
+                {
+                    foreach (var m in MenuOpen.Where(m => m.player == player.userID))
+                    {
+                        switch (m.page)
+                        {
+                            case 0:
+                                {
+                                    break;
+                                }
+
+
+
+                            default:
+                                {
+
+                                    break;
+                                }
+                        }
+                    }
+                }
+
+
+
+                //Bottom Menu
+                {
+                    var BottomMidPanel = container.Add(new CuiPanel
+                    {
+                        Image = { Color = "0 0 0 1" },
+                        RectTransform = { AnchorMin = "0 0", AnchorMax = "1 0.05" },
+                        CursorEnabled = true,
+                        KeyboardEnabled = true
+                    }, MidPanel);
+
+                    container.Add(new CuiButton
+                    {
+                        Button = { Command = "", Color = "1 0 0 1" },
+                        Text = { Text = "Next Page", FontSize = 13, Align = TextAnchor.MiddleCenter },
+                        RectTransform = { AnchorMin = "0.80 0.20", AnchorMax = "0.95 0.80" }
+                    }, BottomMidPanel);
+                }
+            }
             // Adiciona o menu à tela do jogador
             CuiHelper.AddUi(player, container);
         }
 
-        #endregion
+        //private string ObterURLDaImagemDoPerfil(BasePlayer player)
+        //{
+        //    // Obtenha a identificação Steam do jogador
+        //    var steamId = player.UserIDString;
 
+        //    // Construa a URL da API da Steam para obter informações do perfil
+        //    var apiUrl = $"http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=SUA_API_KEY&steamids={steamId}";
+
+        //    try
+        //    {
+        //        // Faça uma requisição à API da Steam
+        //        var apiResponse = webrequest.EnqueueGet(apiUrl, (code, response) =>
+        //        {
+        //            if (code != 200 || response == null)
+        //            {
+        //                Puts($"Erro na requisição à API da Steam. Código: {code}");
+        //                return;
+        //            }
+
+        //            // Analise a resposta JSON
+        //            var jsonData = JObject.Parse(response);
+        //            var players = jsonData["response"]["players"] as JArray;
+        //            if (players != null && players.Count > 0)
+        //            {
+        //                var playerData = players[0];
+        //                var avatarUrl = playerData["avatarfull"]?.ToString();
+        //                if (!string.IsNullOrEmpty(avatarUrl))
+        //                {
+        //                    // Devolva a URL da imagem do perfil
+        //                    return avatarUrl;
+        //                }
+        //            }
+
+        //            Puts("Erro ao analisar a resposta da API da Steam.");
+        //        }, this);
+
+        //        // Aguarde a resposta da API antes de continuar
+        //        apiResponse.Timeout = 5f;
+        //        apiResponse.WaitForResponse();
+
+        //        return apiResponse.Response?.ToString();
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        Puts($"Erro ao obter a URL da imagem do perfil: {ex.Message}");
+        //        return null;
+        //    }
+        //}
+
+
+        #endregion
         [ChatCommand("menu")]
         private void Menu(BasePlayer player, string cmd, string[] args)
         {
+            if (conn.State == System.Data.ConnectionState.Closed)
+            {
+                conn.Open();
+            }
+
             CriarMenu(player);
-            MenuOpen.Add(player.userID);
+
+            MenuClass menu = new MenuClass();
+            menu.player = player.userID;
+
+            MenuOpen.Add(menu);
         }
 
         [ConsoleCommand("fecharmenu")]
@@ -234,7 +612,23 @@ namespace Oxide.Plugins
         void DestroyMenu(BasePlayer player)
         {
             // Lógica para fechar o menu
-            CuiHelper.DestroyUi(player, "MeuMenu");
+            CuiHelper.DestroyUi(player, "NebulosaMenu");
+            //CuiHelper.DestroyUi(player, "LeftPanel");
+            //CuiHelper.DestroyUi(player, "Picture");
+        }
+
+        [ConsoleCommand("discord")]
+        private void discord(ConsoleSystem.Arg arg)
+        {
+            if (arg.Player() == null) { return; }
+            SendReply(arg.Player(), "Abra seu navegador e cole o seguinte link: https://discord.gg/GMVqTAWBmx");
+        }
+
+        [ConsoleCommand("website")]
+        private void website(ConsoleSystem.Arg arg)
+        {
+            if (arg.Player() == null) { return; }
+            SendReply(arg.Player(), "Abra seu navegador e cole o seguinte link: ");
         }
 
         #endregion
@@ -452,7 +846,7 @@ namespace Oxide.Plugins
                     }
                 }
 
-                if (MenuOpen.Contains(morto.userID))
+                if (MenuOpen.Any(menu => menu.player == morto.userID))
                 {
                     DestroyMenu(morto);
                 }
@@ -465,7 +859,7 @@ namespace Oxide.Plugins
         [HookMethod("OnPlayerDisconnected")]
         private void OnPlayerDisconnected(BasePlayer player)
         {
-            if (MenuOpen.Contains(player.userID))
+            if (MenuOpen.Any(menu => menu.player == player.userID))
                 DestroyMenu(player);
         }
         #endregion
