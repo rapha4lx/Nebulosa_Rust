@@ -32,7 +32,6 @@ using UnityEngine.UI;
 using Newtonsoft.Json.Linq;
 using static System.Net.Mime.MediaTypeNames;
 using System.Numerics;
-using System.Reflection.Metadata.Ecma335;
 
 
 
@@ -53,16 +52,19 @@ namespace Oxide.Plugins
         };
         List<MenuClass> MenuOpen = new List<MenuClass>();
 
-
-
         class Shop
         {
             public string name;
             public int value;
         };
+        List<Shop> ShopItens = new List<Shop>();
 
-        List<Shop> ShopItens = new System.Collections.Generic.List<Shop>();
-
+        class Vehicle
+        {
+            public string name;
+            public int value;
+        };
+        List<vehicle> ShopVehicle = new List<vehicle>();
 
         private class CuiInputField
         {
@@ -164,33 +166,26 @@ namespace Oxide.Plugins
 
 
             Shop item = new Shop();
-            item.value = 10;
             item.name = "wood";
+            item.value = 10;
             ShopItens.Add(item);
 
-            item.value = 10;
-            item.name = "stone";
-            ShopItens.Add(item);
+            Shop item1 = new Shop();
+            item1.value = 10;
+            item1.name = "stone";
+            ShopItens.Add(item1);
+            item1.name = "ston1";
+            ShopItens.Add(item1);
+            item1.name = "ston3e";
+            ShopItens.Add(item1);item1.name = "4ston3e";
+            ShopItens.Add(item1);item1.name = "stonv3e";
+            ShopItens.Add(item1);item1.name = "s5ton3e";
+            ShopItens.Add(item1);item1.name = "stsdodsn3e";
+            ShopItens.Add(item1);item1.name = "ston3e";
+            ShopItens.Add(item1);item1.name = "ston3xe";
+            ShopItens.Add(item1);item1.name = "stonz3e";
+            ShopItens.Add(item1);
 
-            item.value = 10;
-            item.name = "stone";
-            ShopItens.Add(item);
-            ShopItens.Add(item);
-            ShopItens.Add(item);
-            ShopItens.Add(item);
-            ShopItens.Add(item);
-            ShopItens.Add(item);
-            ShopItens.Add(item);
-            ShopItens.Add(item);
-            ShopItens.Add(item);
-            ShopItens.Add(item);
-            ShopItens.Add(item);
-            ShopItens.Add(item);
-            ShopItens.Add(item);
-            ShopItens.Add(item);
-            ShopItens.Add(item);
-            ShopItens.Add(item);
-            ShopItens.Add(item);
         }
 
         void Unload()
@@ -267,7 +262,12 @@ namespace Oxide.Plugins
 
         string GetMoney(BasePlayer player)
         {
-            using(var readCommand = conn.CreateCommand())
+            if(conn.State == System.Data.ConnectionState.Closed)
+            {
+                conn.Open();
+            }
+
+            using (var readCommand = conn.CreateCommand())
             {
                 readCommand.CommandText = $"SELECT `Money` FROM `Users` WHERE `SteamID` = '{player.UserIDString}' ";
                 using (var reader = readCommand.ExecuteReader())
@@ -321,7 +321,78 @@ namespace Oxide.Plugins
             Puts($"the argument in LinkDiscord: {arg.Args[0]}");
         }
 
-        void CriarMenu(BasePlayer player)
+        static string GetVariableName<T>(System.Linq.Expressions.Expression<Func<T>> expr)
+        {
+            var memberExpr = expr.Body as System.Linq.Expressions.MemberExpression;
+
+            if (memberExpr == null)
+            {
+                throw new ArgumentException("Expression must be a member expression");
+            }
+
+            return memberExpr.Member.Name;
+        }
+
+        void ShopMenu(ref CuiElementContainer container, string? midPanel, int page)
+        {
+            int end = page * 10;
+
+            double spaceOffsetsX = 0.008; 
+            double spaceOffsetsY = 0.1;
+
+            double backgroundSizeX = 0.19;
+            double backgroundSizeY = 0.43;
+
+            double minX = spaceOffsetsX;
+            double minY = 0.47;
+
+            double maxX = minX + backgroundSizeX;
+            double maxY = minY + backgroundSizeY;
+
+            int x = end - 10;
+            int rowLimit = x + 5;
+
+            Puts($"ShopItens Count: {ShopItens.Count}");
+
+            for (int y = 0; y < 2; y++)
+            {
+                for (; x < rowLimit; x++)
+                {
+                    if (ShopItens.Count <= x)
+                    {
+                        Puts("finished shop function");
+                        return;
+                    }
+
+                    container.Add(new CuiPanel
+                    {
+                        Image = { Color = "0 0 0 0.5" },
+                        RectTransform = { AnchorMin = "0.1 0.1", AnchorMax = "0.9 0.9" },
+                        CursorEnabled = true,
+                        KeyboardEnabled = true
+                    }, midPanel);
+
+
+                    container.Add(new CuiButton
+                    {
+                        Button = { Command = "", Color = "1 0 0 1" },
+                        RectTransform = { AnchorMin = $"{minX} {minY}", AnchorMax = $"{maxX} {maxY}" },
+                        Text = { Text = $"{x}/{ShopItens[x].name}/{ShopItens[x].value}", FontSize = 12, Align = TextAnchor.MiddleCenter }
+                    }, midPanel);
+
+                    minX = minX + 0.009 + backgroundSizeX;
+                    maxX = minX + backgroundSizeX;
+                }
+                minX = spaceOffsetsX;
+                maxX = minX + backgroundSizeX;
+
+                minY = 0.03;
+                maxY = minY + backgroundSizeY;
+                rowLimit += 5;
+            }
+        }
+
+        void CriarMenu(BasePlayer player, int page = 1, int menu = 0)
         {
             var container = new CuiElementContainer();
 
@@ -384,8 +455,9 @@ namespace Oxide.Plugins
 
                 container.Add(new CuiLabel
                 {
-                    Text = {Text = "$Money: {"}
-                })
+                    Text = { Text = $"Money: {GetMoney(player)}", FontSize = 20, Align = TextAnchor.MiddleLeft },
+                    RectTransform = { AnchorMin = "0 0.40" }
+                }, leftPanel);
 
                 if (!DiscordLinked(player.UserIDString))
                 {
@@ -442,10 +514,6 @@ namespace Oxide.Plugins
                     RectTransform = { AnchorMin = "0 0.04", AnchorMax = "1 0.08" },
                     Text = { Text = "WebSite", FontSize = 18, Align = TextAnchor.MiddleCenter }
                 }, leftPanel);
-
-                
-
-
             }
 
             //mid Panel
@@ -489,25 +557,28 @@ namespace Oxide.Plugins
                         RectTransform = { AnchorMin = "0.6 0", AnchorMax = "0.8 1" }
                     }, TopMidPanelButtons);
                 }
-                //itens
+
+                //Menus
                 {
-                    foreach (var m in MenuOpen.Where(m => m.player == player.userID))
+                    switch (menu)
                     {
-                        switch (m.page)
-                        {
-                            case 0:
-                                {
-                                    break;
-                                }
+                        case 0:
+                            {
+                                ShopMenu(ref container, MidPanel, page);
+                                break;
+                            }
 
+                        case 1:
+                            {
 
+                                break;
+                            }
 
-                            default:
-                                {
+                        case 2:
+                            {
 
-                                    break;
-                                }
-                        }
+                                break;
+                            }
                     }
                 }
 
@@ -528,6 +599,13 @@ namespace Oxide.Plugins
                         Button = { Command = "", Color = "1 0 0 1" },
                         Text = { Text = "Next Page", FontSize = 13, Align = TextAnchor.MiddleCenter },
                         RectTransform = { AnchorMin = "0.80 0.20", AnchorMax = "0.95 0.80" }
+                    }, BottomMidPanel);
+
+                    container.Add(new CuiButton
+                    {
+                        Button = { Command = "", Color = "1 0 0 1" },
+                        Text = { Text = "Back Page", FontSize = 13, Align = TextAnchor.MiddleCenter },
+                        RectTransform = { AnchorMin = "0.20 0.20", AnchorMax = "0.35 0.80" }
                     }, BottomMidPanel);
                 }
             }
